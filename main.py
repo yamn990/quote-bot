@@ -1,63 +1,24 @@
-from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
+from telegram import Update
+from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, ContextTypes, filters
+import os
 import openai
-import logging
 
-# مفاتيح الوصول
-TELEGRAM_TOKEN = "7012024373:AAESP_3pUKCS5LiRyzSpDrmIo9W_hGTMMnc"
-OPENAI_API_KEY = "ضع_هنا_API_KEY_الخاصة_بك_من_OpenAI"
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# إعداد البوت و Flask
-bot = Bot(token=TELEGRAM_TOKEN)
-app = Flask(__name__)
-dispatcher = Dispatcher(bot, None, workers=0)
-openai.api_key = OPENAI_API_KEY
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("مرحبًا! أرسل لي أي رسالة وسأرد عليك برد ذكي 🔮")
 
-# تسجيل الأخطاء
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_message = update.message.text
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": user_message}]
+    )
+    bot_reply = response["choices"][0]["message"]["content"]
+    await update.message.reply_text(bot_reply)
 
-# توليد اقتباس من ChatGPT
-def generate_quote(prompt):
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "أنت كاتب اقتباسات عربي محترف."},
-                {"role": "user", "content": f"اكتب اقتباسًا رائعًا حول: {prompt}"}
-            ],
-            temperature=0.9
-        )
-        return response['choices'][0]['message']['content'].strip()
-    except Exception as e:
-        return f"حدث خطأ: {str(e)}"
-
-# أمر /start
-def start(update, context):
-    update.message.reply_text("👋 أهلًا بك في بوت الاقتباسات. فقط أرسل لي موضوعًا، وسأكتب لك اقتباسًا ملهمًا!")
-
-# التعامل مع الرسائل النصية
-def handle_message(update, context):
-    user_input = update.message.text
-    quote = generate_quote(user_input)
-    update.message.reply_text(quote)
-
-# ربط الأوامر
-dispatcher.add_handler(CommandHandler("start", start))
-dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-
-# Webhook
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    dispatcher.process_update(update)
-    return "ok"
-
-# الصفحة الرئيسية
-@app.route("/")
-def home():
-    return "بوت الاقتباسات جاهز!"
-
-# تشغيل الخادم
 if __name__ == "__main__":
-    app.run(port=5000)
+    app = ApplicationBuilder().token(os.getenv("TELEGRAM_TOKEN")).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.run_polling()
